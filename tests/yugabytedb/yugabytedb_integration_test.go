@@ -57,12 +57,13 @@ func getYBVars(t *testing.T) map[string]any {
 	}
 
 	return map[string]any{
-		"kind":     YBDB_SOURCE_KIND,
-		"host":     YBDB_HOST,
-		"port":     YBDB_PORT,
-		"database": YBDB_DATABASE,
-		"user":     YBDB_USER,
-		"password": YBDB_PASS,
+		"kind":         YBDB_SOURCE_KIND,
+		"host":         YBDB_HOST,
+		"port":         YBDB_PORT,
+		"database":     YBDB_DATABASE,
+		"user":         YBDB_USER,
+		"password":     YBDB_PASS,
+		"load_balance": YBDB_LB,
 	}
 }
 
@@ -118,6 +119,7 @@ func TestYugabyteDB(t *testing.T) {
 
 	tableNameParam := "param_table_" + strings.Replace(uuid.New().String(), "-", "", -1)
 	tableNameAuth := "auth_table_" + strings.Replace(uuid.New().String(), "-", "", -1)
+	tableNameTemplateParam := "template_param_table_" + strings.ReplaceAll(uuid.New().String(), "-", "")
 
 	create1, insert1, stmt1, params1 := tests.GetPostgresSQLParamToolInfo(tableNameParam)
 	teardown1 := SetupYugabyteDBSQLTable(t, ctx, pool, create1, insert1, tableNameParam, params1)
@@ -128,6 +130,8 @@ func TestYugabyteDB(t *testing.T) {
 	defer teardown2(t)
 
 	toolsFile := tests.GetToolsConfig(sourceConfig, YBDB_TOOL_KIND, stmt1, stmt2)
+	tmplSelectCombined, tmplSelectFilterCombined := tests.GetPostgresSQLTmplToolStatement()
+	toolsFile = tests.AddTemplateParamConfig(t, toolsFile, YBDB_TOOL_KIND, tmplSelectCombined, tmplSelectFilterCombined)
 
 	cmd, cleanup, err := tests.StartCmd(ctx, toolsFile, args...)
 	if err != nil {
@@ -147,7 +151,8 @@ func TestYugabyteDB(t *testing.T) {
 
 	select1Want := "[{\"?column?\":1}]"
 	failInvocationWant := `{"jsonrpc":"2.0","id":"invoke-fail-tool","result":{"content":[{"type":"text","text":"unable to execute query: ERROR: syntax error at or near \"SELEC\" (SQLSTATE 42601)"}],"isError":true}}`
-	invokeParamWant, mcpInvokeParamWant := tests.GetNonSpannerInvokeParamWant()
+	invokeParamWant, mcpInvokeParamWant, tmplSelectAllWant, tmplSelect1Want := tests.GetNonSpannerInvokeParamWant()
 	tests.RunToolInvokeTest(t, select1Want, invokeParamWant)
 	tests.RunMCPToolCallMethod(t, mcpInvokeParamWant, failInvocationWant)
+	tests.RunToolInvokeWithTemplateParameters(t, tableNameTemplateParam, tmplSelectAllWant, tmplSelect1Want, false)
 }

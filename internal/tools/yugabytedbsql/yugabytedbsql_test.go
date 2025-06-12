@@ -61,7 +61,7 @@ func TestParseFromYamlYugabyteDBSQL(t *testing.T) {
 			want: server.ToolConfigs{
 				"hotel_search": yugabytedbsql.Config{
 					Name:         "hotel_search",
-					Kind:         yugabytedbsql.ToolKind,
+					Kind:         "yugabytedb-sql",
 					Source:       "yb-source",
 					Description:  "search hotels by city",
 					Statement:    "SELECT * FROM hotels WHERE city = $1;\n",
@@ -138,4 +138,77 @@ func TestFailParseFromYamlYugabyteDBSQL(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseFromYamlWithTemplateParamsYugabyteDB(t *testing.T) {
+	ctx, err := testutils.ContextWithNewLogger()
+	if err != nil {
+		t.Fatalf("unexpected error: %s", err)
+	}
+	tcs := []struct {
+		desc string
+		in   string
+		want server.ToolConfigs
+	}{
+		{
+			desc: "basic example",
+			in: `
+			tools:
+				example_tool:
+					kind: yugabytedb-sql
+					source: my-yb-instance
+					description: some description
+					statement: |
+						SELECT * FROM SQL_STATEMENT;
+					parameters:
+						- name: name
+						  type: string
+						  description: some description
+					templateParameters:
+						- name: tableName
+						  type: string
+						  description: The table to select hotels from.
+						- name: fieldArray
+						  type: array
+						  description: The columns to return for the query.
+						  items: 
+								name: column
+								type: string
+								description: A column name that will be returned from the query.
+			`,
+			want: server.ToolConfigs{
+				"example_tool": yugabytedbsql.Config{
+					Name:         "example_tool",
+					Kind:         "yugabytedb-sql",
+					Source:       "my-yb-instance",
+					Description:  "some description",
+					Statement:    "SELECT * FROM SQL_STATEMENT;\n",
+					AuthRequired: []string{},
+					Parameters: []tools.Parameter{
+						tools.NewStringParameter("name", "some description"),
+					},
+					TemplateParameters: []tools.Parameter{
+						tools.NewStringParameter("tableName", "The table to select hotels from."),
+						tools.NewArrayParameter("fieldArray", "The columns to return for the query.", tools.NewStringParameter("column", "A column name that will be returned from the query.")),
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range tcs {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := struct {
+				Tools server.ToolConfigs `yaml:"tools"`
+			}{}
+			// Parse contents
+			err := yaml.UnmarshalContext(ctx, testutils.FormatYaml(tc.in), &got)
+			if err != nil {
+				t.Fatalf("unable to unmarshal: %s", err)
+			}
+			if diff := cmp.Diff(tc.want, got.Tools); diff != "" {
+				t.Fatalf("incorrect parse: diff %v", diff)
+			}
+		})
+	}
+
 }
